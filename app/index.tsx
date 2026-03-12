@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as MediaLibrary from 'expo-media-library';
 import * as Haptics from 'expo-haptics';
 import type { Asset } from 'expo-media-library';
@@ -20,7 +21,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withTiming,
   runOnJS,
   interpolate,
   Extrapolation,
@@ -46,37 +46,6 @@ const COLORS = {
   text: '#FFFFFF',
   textMuted: 'rgba(255,255,255,0.6)',
 };
-
-function XIcon({ filled = false }: { filled?: boolean }) {
-  return (
-    <View style={iconStyles.xContainer}>
-      <View
-        style={[
-          iconStyles.xLine,
-          iconStyles.xLine1,
-          filled && iconStyles.xLineFilled,
-        ]}
-      />
-      <View
-        style={[
-          iconStyles.xLine,
-          iconStyles.xLine2,
-          filled && iconStyles.xLineFilled,
-        ]}
-      />
-    </View>
-  );
-}
-
-function CheckIcon({ filled = false }: { filled?: boolean }) {
-  const strokeColor = filled ? iconStyles.iconFilledGreen : null;
-  return (
-    <View style={iconStyles.checkContainer}>
-      <View style={[iconStyles.checkStroke, iconStyles.checkTail, strokeColor]} />
-      <View style={[iconStyles.checkStroke, iconStyles.checkStem, strokeColor]} />
-    </View>
-  );
-}
 
 function TrashPill({
   count,
@@ -135,19 +104,19 @@ function StackCard({
         translateX.value > threshold || velocity > 500;
 
       if (shouldDismissLeft) {
-        translateX.value = withTiming(
+        translateX.value = withSpring(
           -SCREEN_WIDTH * 1.2,
-          { duration: 200 },
-          () => {
-            runOnJS(onSwipeComplete)('delete');
+          { damping: 15, stiffness: 120 },
+          (finished) => {
+            if (finished) runOnJS(onSwipeComplete)('delete');
           }
         );
       } else if (shouldDismissRight) {
-        translateX.value = withTiming(
+        translateX.value = withSpring(
           SCREEN_WIDTH * 1.2,
-          { duration: 200 },
-          () => {
-            runOnJS(onSwipeComplete)('keep');
+          { damping: 15, stiffness: 120 },
+          (finished) => {
+            if (finished) runOnJS(onSwipeComplete)('keep');
           }
         );
       } else {
@@ -213,6 +182,7 @@ function StackCard({
               source={{ uri: asset.uri }}
               style={styles.cardImage}
               contentFit="cover"
+              priority={isTop ? 'high' : 'low'}
             />
           </View>
           {isTop && (
@@ -371,6 +341,13 @@ export default function Index() {
       loadMorePhotos();
     }
   }, [currentIndex, photos.length, hasNextPage, loadingMore, loadMorePhotos]);
+
+  useEffect(() => {
+    const uris = [1, 2, 3]
+      .map((i) => photos[currentIndex + i]?.uri)
+      .filter(Boolean) as string[];
+    if (uris.length > 0) Image.prefetch(uris);
+  }, [currentIndex, photos]);
 
   const handleGrantAccess = useCallback(async () => {
     await requestPermission();
@@ -589,7 +566,13 @@ export default function Index() {
             pressed && styles.deleteButtonFilled,
           ]}
         >
-          {({ pressed }) => <XIcon filled={pressed} />}
+          {({ pressed }) => (
+            <Ionicons
+              name="close-circle-outline"
+              size={32}
+              color={pressed ? COLORS.text : COLORS.trash}
+            />
+          )}
         </Pressable>
         <Pressable
           onPress={handleKeep}
@@ -600,62 +583,18 @@ export default function Index() {
             pressed && styles.keepButtonFilled,
           ]}
         >
-          {({ pressed }) => <CheckIcon filled={pressed} />}
+          {({ pressed }) => (
+            <Ionicons
+              name="checkmark-circle-outline"
+              size={32}
+              color={pressed ? COLORS.text : COLORS.keep}
+            />
+          )}
         </Pressable>
       </View>
     </SafeAreaView>
   );
 }
-
-const iconStyles = StyleSheet.create({
-  xContainer: {
-    width: 28,
-    height: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  xLine: {
-    position: 'absolute',
-    width: 20,
-    height: 3,
-    backgroundColor: COLORS.trash,
-    borderRadius: 2,
-  },
-  xLineFilled: {
-    backgroundColor: COLORS.text,
-  },
-  xLine1: { transform: [{ rotate: '45deg' }] },
-  xLine2: { transform: [{ rotate: '-45deg' }] },
-  checkContainer: {
-    width: 28,
-    height: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkStroke: {
-    position: 'absolute',
-    width: 3.5, // Slightly thicker for a premium look
-    backgroundColor: COLORS.keep,
-    borderRadius: 2,
-  },
-  checkTail: {
-    height: 12, // The short side
-    transform: [
-      { translateX: -5 }, // Move left
-      { translateY: 4 },  // Move down
-      { rotate: '-45deg' }, // Rotate into place
-    ],
-  },
-  checkStem: {
-    height: 22, // The long side
-    transform: [
-      { translateX: 4 },  // Move right
-      { translateY: 0 },  // Align center
-      { rotate: '45deg' },  // Rotate into place
-    ],
-  },
-  iconFilledGreen: { backgroundColor: COLORS.text },
-});
 
 const styles = StyleSheet.create({
   container: {
@@ -807,6 +746,9 @@ const styles = StyleSheet.create({
     gap: 48,
     paddingVertical: 24,
     paddingBottom: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
   controlButton: {
     width: 64,
