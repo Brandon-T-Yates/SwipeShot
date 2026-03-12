@@ -1,28 +1,50 @@
 {
   "expo": {
     "name": "SwipeShot",
-    "slug": "SwipeShot",
+    "slug": "swipeshot",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "scheme": "swipeshot",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tyleryates.swipeshot",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "SwipeShot needs access to your photos to help you quickly review, keep, or delete images. Your photos never leave your device.",
+        "NSPhotoLibraryAddUsageDescription": "SwipeShot needs permission to save photos to your library."
+      }
     },
     "android": {
+      "package": "com.tyleryates.swipeshot",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#000000",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
     },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "SwipeShot needs access to your photos to help you quickly review, keep, or delete images. Your photos never leave your device.",
+          "savePhotosPermission": "SwipeShot needs permission to save photos to your library.",
+          "granularPermissions": ["photo"]
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     }
