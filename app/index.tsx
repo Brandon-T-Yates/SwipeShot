@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  withTiming,
   runOnJS,
   interpolate,
   Extrapolation,
@@ -35,6 +36,8 @@ const CARD_BORDER_RADIUS = 30;
 const SWIPE_THRESHOLD = 80;
 const MAX_ROTATION = 15;
 const SPRING_CONFIG = { damping: 20, stiffness: 200 };
+const SWIPE_OUT_DURATION = 140;
+const SWIPE_OUT_DISTANCE = SCREEN_WIDTH * 1.15;
 
 // OLED & minimal palette
 const COLORS = {
@@ -74,56 +77,80 @@ function TrashPill({
   );
 }
 
-function StackCard({
-  asset,
-  index,
-  isTop,
-  onSwipeComplete,
-}: {
+type StackCardProps = {
   asset: Asset;
   index: number;
   isTop: boolean;
   onSwipeComplete: (action: 'keep' | 'delete') => void;
-}) {
+};
+
+const StackCard = React.memo(function StackCard({
+  asset,
+  index,
+  isTop,
+  onSwipeComplete,
+}: StackCardProps) {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
+  const stackDepth = useSharedValue(index);
 
-  const panGesture = Gesture.Pan()
-    .enabled(isTop)
-    .activeOffsetX([-20, 20])
-    .onUpdate((e) => {
-      translateX.value = e.translationX;
-      translateY.value = e.translationY * 0.3;
-    })
-    .onEnd((e) => {
-      const threshold = SWIPE_THRESHOLD;
-      const velocity = e.velocityX;
-      const shouldDismissLeft =
-        translateX.value < -threshold || velocity < -500;
-      const shouldDismissRight =
-        translateX.value > threshold || velocity > 500;
+  useEffect(() => {
+    stackDepth.value = index;
+  }, [index]);
 
-      if (shouldDismissLeft) {
-        translateX.value = withSpring(
-          -SCREEN_WIDTH * 1.2,
-          { damping: 15, stiffness: 120 },
-          (finished) => {
-            if (finished) runOnJS(onSwipeComplete)('delete');
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(isTop)
+        .activeOffsetX([-20, 20])
+        .averageTouches(true)
+        .onUpdate((e) => {
+          'worklet';
+          translateX.value = e.translationX;
+          translateY.value = e.translationY * 0.3;
+        })
+        .onEnd((e) => {
+          'worklet';
+          const threshold = SWIPE_THRESHOLD;
+          const velocity = e.velocityX;
+          const shouldDismissLeft =
+            translateX.value < -threshold || velocity < -500;
+          const shouldDismissRight =
+            translateX.value > threshold || velocity > 500;
+
+          if (shouldDismissLeft) {
+            const velocityBoost = Math.min(Math.abs(velocity) * 0.05, SCREEN_WIDTH * 0.25);
+            translateX.value = withTiming(
+              -(SWIPE_OUT_DISTANCE + velocityBoost),
+              { duration: SWIPE_OUT_DURATION }
+            );
+            translateY.value = withTiming(e.translationY * 0.2, {
+              duration: SWIPE_OUT_DURATION,
+            });
+            runOnJS(onSwipeComplete)('delete');
+          } else if (shouldDismissRight) {
+            const velocityBoost = Math.min(Math.abs(velocity) * 0.05, SCREEN_WIDTH * 0.25);
+            translateX.value = withTiming(
+              SWIPE_OUT_DISTANCE + velocityBoost,
+              { duration: SWIPE_OUT_DURATION }
+            );
+            translateY.value = withTiming(e.translationY * 0.2, {
+              duration: SWIPE_OUT_DURATION,
+            });
+            runOnJS(onSwipeComplete)('keep');
+          } else {
+            translateX.value = withSpring(0, SPRING_CONFIG);
+            translateY.value = withSpring(0, SPRING_CONFIG);
           }
-        );
-      } else if (shouldDismissRight) {
-        translateX.value = withSpring(
-          SCREEN_WIDTH * 1.2,
-          { damping: 15, stiffness: 120 },
-          (finished) => {
-            if (finished) runOnJS(onSwipeComplete)('keep');
-          }
-        );
-      } else {
-        translateX.value = withSpring(0, SPRING_CONFIG);
-        translateY.value = withSpring(0, SPRING_CONFIG);
-      }
-    });
+        }),
+    [isTop, onSwipeComplete]
+  );
+
+  const animatedWrapperStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 - stackDepth.value * 0.06 }],
+    opacity: 1 - stackDepth.value * 0.25,
+    zIndex: 10 - stackDepth.value,
+  }));
 
   const animatedCardStyle = useAnimatedStyle(() => {
     const rotation = interpolate(
@@ -159,20 +186,9 @@ function StackCard({
     ),
   }));
 
-  const scale = 1 - index * 0.06;
-  const opacity = 1 - index * 0.25;
-  const zIndex = 10 - index;
-
   return (
-    <View
-      style={[
-        styles.stackCard,
-        {
-          transform: [{ scale }],
-          opacity,
-          zIndex,
-        },
-      ]}
+    <Animated.View
+      style={[styles.stackCard, animatedWrapperStyle]}
       pointerEvents={isTop ? 'auto' : 'none'}
     >
       <GestureDetector gesture={panGesture}>
@@ -182,7 +198,8 @@ function StackCard({
               source={{ uri: asset.uri }}
               style={styles.cardImage}
               contentFit="cover"
-              priority={isTop ? 'high' : 'low'}
+              priority="high"
+              recyclingKey={asset.id}
             />
           </View>
           {isTop && (
@@ -197,9 +214,14 @@ function StackCard({
           )}
         </Animated.View>
       </GestureDetector>
-    </View>
+    </Animated.View>
   );
-}
+}, (prev, next) =>
+  prev.asset.id === next.asset.id &&
+  prev.index === next.index &&
+  prev.isTop === next.isTop &&
+  prev.onSwipeComplete === next.onSwipeComplete
+);
 
 export default function Index() {
   const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
@@ -568,7 +590,7 @@ export default function Index() {
         >
           {({ pressed }) => (
             <Ionicons
-              name="close-circle-outline"
+              name="close"
               size={32}
               color={pressed ? COLORS.text : COLORS.trash}
             />
@@ -585,7 +607,7 @@ export default function Index() {
         >
           {({ pressed }) => (
             <Ionicons
-              name="checkmark-circle-outline"
+              name="checkmark"
               size={32}
               color={pressed ? COLORS.text : COLORS.keep}
             />
@@ -747,8 +769,6 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     paddingBottom: 8,
     backgroundColor: 'rgba(0,0,0,0.6)',
-    borderTopWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
   },
   controlButton: {
     width: 64,
